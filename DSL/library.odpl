@@ -1,0 +1,208 @@
+# --- Types ---
+type String
+type Integer
+type Boolean
+type Date
+
+# === Community ===
+community contract libraryCommunity {
+    objective "To share the collection of items amongst the University Members."
+
+    # --- Events ---
+    events {
+        # Fired when an item is borrowed, creating a loan record.
+        ItemBorrowed(loan: Loan),
+        # Fired when a borrowed item is returned.
+        ItemReturned(loan: Loan),
+        # Fired by a monitoring process when a loan's due date passes.
+        LoanOverdue(loan: Loan),
+        # Fired when a librarian issues a fine.
+        FineIssued(borrower: Borrower, amount: Integer),
+        # Fired when a borrower pays a fine.
+        FinePaid(borrower: Borrower, fine: Fine),
+        # Fired when a librarian suspends a borrower's rights.
+        BorrowerSuspended(borrower: Borrower),
+        # Fired when a librarian lifts a suspension.
+        SuspensionLifted(borrower: Borrower)
+    }
+
+    # --- Artifacts ---
+    artifact LibraryItem {
+        id: String
+        title: String
+        itemType: String # e.g., 'Book' or 'Periodical'.
+    }
+
+    artifact Loan {
+        loanId: String
+        item: LibraryItem
+        # The 'Borrower' role is a generic placeholder for any party that can borrow items.
+        borrower: Borrower
+        borrowDate: Date
+        dueDate: Date
+        isOverdue: Boolean
+    }
+
+    artifact Fine {
+        fineId: String
+        borrower: Borrower
+        loan: Loan
+        amount: Integer
+        isPaid: Boolean
+    }
+
+    # --- Roles  ---
+    role Librarian {
+        description "A staff member who manages the library and enforces its rules."
+
+        # Fine a borrower if their loan is overdue
+        speech act fineBorrower(loan: Loan)
+        [ loan.isOverdue == True ]
+        {
+            burden pay_fine(fine: Fine) on Borrower
+                triggered by FineIssued
+                discharged by FinePaid
+        } emits FineIssued
+
+        # Suspend a borrower from the library if they have unpaid fines
+        speech act suspendBorrower(borrower: Borrower)
+        [ hasUnpaidFines(borrower) == True ]
+        {
+            embargo cannot_borrow on Borrower
+                triggered by BorrowerSuspended
+                discharged by SuspensionLifted
+        } emits BorrowerSuspended
+
+        # Lift a suspension from a borrower, if they have no fines left
+        speech act liftSuspension(borrower: Borrower)
+        [ hasUnpaidFines(borrower) == False ]
+        { } emits SuspensionLifted
+
+        # Action to allow the Librarian to change policy values.
+        action setPolicyValue(policyName: String, newValue: String)
+    }
+
+    role Borrower {
+        description "A generic role for any entity permitted to borrow items."
+    }
+
+    role Undergraduate {
+        description "An undergraduate student borrower."
+
+        # Borrow an item
+        speech act borrowItem(item: LibraryItem)
+        [ item.itemType != 'Periodical' and loanCount(self) < UndergraduateLoanLimit]
+        {
+            burden return_item(loan: Loan) on Undergraduate
+                triggered by ItemBorrowed
+                discharged by  ItemReturned
+        } emits ItemBorrowed
+
+        # Return an item
+        speech act returnItem(loan: Loan)
+        [ loan.borrower == self ]
+        { } emits ItemReturned
+
+        # Pay a fine
+        speech act payFine(fine: Fine)
+        [ fine.borrower == self ]
+        { } emits FinePaid
+
+        # Delegate return burden to someone else
+        delegate return_item_delegation burden return_item(loan: Loan) to ProxyBorrower
+    }
+
+    role ProxyBorrower {
+    description "A role for a proxy borrower who can return items on behalf of an Undergraduate."
+
+        speech act proxy_return_item(loan: Loan) {
+
+        } emits ItemReturned
+    }
+
+    role Postgraduate {
+        description "A postgraduate student borrower."
+
+        # Borrow an item
+        speech act borrowItem(item: LibraryItem)
+        [ loanCount(self) < PostgraduateLoanLimit ]
+        {
+            burden return_item(loan: Loan) on Postgraduate
+                triggered by ItemBorrowed
+                discharged by ItemReturned
+        } emits ItemBorrowed
+
+        # Return an item
+        speech act returnItem(loan: Loan)
+        [ loan.borrower == self ]
+        { } emits ItemReturned
+
+        # Pay a fine
+        speech act payFine(fine: Fine)
+        [ fine.borrower == self ]
+        { } emits FinePaid
+    }
+
+    role Staff {
+        description "An academic staff borrower."
+
+        # Borrow an item
+        speech act borrowItem(item: LibraryItem)
+        [ loanCount(self) < StaffLoanLimit ]
+        {
+            burden return_item(loan: Loan) on Staff
+                triggered by ItemBorrowed
+                discharged by ItemReturned
+        } emits ItemBorrowed
+
+        # Return an item
+        speech act returnItem(loan: Loan)
+        [ loan.borrower == self ]
+        { } emits ItemReturned
+
+        # Pay a fine
+        speech act payFine(fine: Fine)
+        [ fine.borrower == self ]
+        { } emits FinePaid
+    }
+
+    # --- Policies  ---
+    # ___ Limits on number of items ___
+    policy UndergraduateLoanLimit: Integer {
+        policy setting by Librarian
+        initial value 8
+        envelope { set of [0..20] }
+    }
+    policy PostgraduateLoanLimit: Integer {
+        policy setting by Librarian
+        initial value 16
+        envelope { set of [0..40] }
+    }
+    policy StaffLoanLimit: Integer {
+        policy setting by Librarian
+        initial value 24
+        envelope { set of [0..60] }
+    }
+
+    # ___ Limits on durations ___
+    policy UndergraduateBookDuration: Duration {
+        policy setting by Librarian
+        initial value 4 weeks
+        envelope { set of [1..8] }
+    }
+    policy PostgraduateBookDuration: Duration {
+        policy setting by Librarian
+        initial value 1 month
+        envelope { set of [2..8] }
+    }
+    policy StaffBookDuration: Duration {
+        policy setting by Librarian
+        initial value 1 year
+        envelope { set of [1..12] }
+    }
+    policy PeriodicalDuration: Duration {
+        policy setting by Librarian
+        initial value 1 week
+        envelope { set of [1..14] }
+    }
+}

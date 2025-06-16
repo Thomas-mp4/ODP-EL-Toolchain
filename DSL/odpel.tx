@@ -1,0 +1,208 @@
+import odppolicy
+
+Model:
+    simpleTypes*=SimpleType
+    communities*=Community
+;
+
+EnterpriseObject:
+    ActiveEO | DeonticToken
+;
+ActiveEO:
+    Party | Agent
+;
+
+Party:
+    'party' name=ID 'as' fullfils_role=[CommunityRole:FQN|^communities.roles]
+;
+
+Agent: 
+    'agent' name=ID 'acts_for' principal = [Party:FQN]
+;
+
+Community:
+    'community' contract?='contract' name=ID '{'
+        'objective' objective=STRING
+        imports*=Import
+        ('events' '{' events*=Event[','] '}')?
+        artifacts*=Artifact
+        roles*=CommunityRole
+        rules*=Rule
+    '}'
+;
+
+Import:
+    'import' importedCommunity = [Community] 'as' name=ID
+        role_fulfillment*=RoleFulfillment
+        token_aliases*=TokenAlias
+        policyEnvelopeConfig*=PolicyEnvelopeConfig
+;
+
+RoleFulfillment:
+    role=[CommunityRole:ID|...roles] 'fulfills' imported_role=[CommunityRole:ID|..importedCommunity.roles]
+;
+TokenAlias:
+    name=ID 'as' imported_name=ID
+;
+PolicyEnvelopeConfig:
+    policy=ID '.' 'envelope' '=' '{'
+        envelope_rules+=EnvelopeRule
+    '}'
+;
+
+Artifact:
+    'artifact' name=ID '{'
+        ('parties' parties+=[CommunityRole:ID|..roles][','])?
+        properties*=Property
+    '}'
+;
+Property:
+    name=ID ':' type=ID
+;
+Enum:
+    'enum' name=ID '{'
+        variants*=ID
+    '}'
+;
+
+CommunityRole:
+    'role' name=ID '{'
+        ('description' description=STRING)?
+        actions*=Action
+        tokens*=DeonticToken
+    '}'
+;
+
+EnterpriseObject:
+    ActiveEO | DeonticToken
+;
+
+// Every action may have a condition, and can be a basic or speech act (handles deontic tokens)
+Action:
+    SpeechAct | BasicAction | Authorization | Delegation | Declaration
+;
+
+BasicAction:
+    'action' name=ID ('(' parameters*=Parameter[','] ')')? (':' return_type=Type)?
+    guard=Guard?
+    ('{'
+        calls*=ActionCall
+    '}')?
+    ('emits' trigger_event=Event)?
+;
+
+ActionCall:
+    role=ID '.' action=ID '(' arguments*=ID[',']')'
+;
+
+SpeechAct:
+    'speech' 'act' name=ID ('(' parameters*=Parameter[','] ')')?
+    guard=Guard?
+    '{'
+        tokens*=DeonticToken
+    '}' ('emits' trigger_event=Event)?
+;
+
+Authorization:
+    'authorize' name=ID ('(' parameters*=Parameter[','] ')')?
+    guard=Guard?
+    '{'
+        tokens*=DeonticToken
+    '}' ('emits' trigger_event=Event)?
+;
+
+// [[pdf:../docs/DIS_15414_X.911.pdf::35++0.00][DIS_15414_X.911.pdf: Page 35]]
+Delegation:
+    'delegate' name=ID token_type=DelegatedToken token_name=ID ('(' parameters*=Parameter[','] ')')?
+    // Agent is community role in our language. In the standard it is a concept inherited from ActiveEO.
+    // There is a link communmityRolefiller from CommunityRole to ActiveEO.
+    // See [[pdf:../docs/DIS_15414_X.911.pdf::33++0.00][DIS_15414_X.911.pdf: Page 33]]
+    'to' agent=[CommunityRole:ID|^roles]
+    guard=Guard?
+;
+
+
+Declaration:
+    'declare' name=ID ('(' parameters*=Parameter[','] ')')?
+    guard=Guard?
+    '{'
+        tokens*=DeonticToken
+    '}' ('emits' trigger_event=Event)?
+;
+
+DelegatedToken:
+    'permit' | 'burden'
+;
+
+Parameter:
+    name=ID ':' type=Type
+;
+
+Type:
+      set?='set' '<' type=[BaseType:FQN|simple_types,^artifacts,^roles] '>'
+    | type=[BaseType:FQN|simpleTypes,
+                         // local artifacts
+                         ^artifacts,
+                         // Imported artifacts
+                         ^imports.~importedCommunity.artifacts,
+                         // local roles
+                         ^roles,
+                         // imported roles
+                         ^imports.~role_fulfillment.role]
+;
+
+// TODO: Perhaps extend this to include a unit type (having a value, and a unit) -> unitType, Name, NameOfTheUnit, type of the quantity / value (INT,FLOAT, etc.)
+SimpleType:
+    'type' name=ID
+;
+
+BaseType:
+    SimpleType | Artifact | CommunityRole
+;
+
+Event: name=ID ('(' artifacts+=Parameter[','] ')')?;
+
+DeonticToken:
+    Burden | Permit | Embargo
+;
+
+Embargo:
+    'embargo' name=ID ('(' parameters*=Parameter[','] ')')?
+        ('on' role=[CommunityRole])?
+        (guard=Guard)?
+        ('triggered' 'by' activation_trigger=Event)?
+        ('discharged' 'by' (finish_event=EventExpression)?)? (event_guard=Guard)?
+;
+// TODO: trigger needs semantic processing to handle `this`.
+Burden:
+    'burden' name=ID ('(' parameters*=Parameter[','] ')')?
+        ('on' role=[CommunityRole])?
+        (guard=Guard)?
+        ('triggered' 'by' activation_trigger=Event)?
+        ('discharged' 'by' (finish_event=EventExpression)?)? (event_guard=Guard)?
+;
+
+Permit:
+    'permit' name=ID ('(' parameters*=Parameter[','] ')')?
+    ('on' role=[CommunityRole])?
+    (guard=Guard)?
+    ('triggered' 'by' activation_trigger=Event)?
+    ('expired' 'by' (finish_event=EventExpression)?)? (event_guard=Guard)?
+;
+
+Guard: '[' condition=Condition ']';
+
+Condition: /\([^)]*\)|[^\]]*/;
+
+EventExpression: op=AndExpression ('&' op=AndExpression)*;
+AndExpression: op=PrimaryExpression ('|' op=PrimaryExpression)*;
+PrimaryExpression: '(' op=EventExpression ')' | event=Event;
+
+
+Comment: /#.*/;
+
+FQN:       ID('.'ID)*;
+
+// Just a placeholder for unfinished rule bodies
+TODO: 'this must be done';
+

@@ -1,0 +1,27 @@
+Rule: Policy | PolicyEnvelope | PolicyValue;
+Behaviour: PolicySettingBehaviour;
+
+Policy:
+    'policy' name=ID ':' type=ID '{'
+        setting_behaviour=PolicySettingBehaviour
+        'initial' 'value' initial_value=PolicyValue
+        envelope=PolicyEnvelope
+    '}'
+;
+
+PolicySettingBehaviour:
+    'policy' 'setting' 'by' policy_setting_role=ID
+;
+
+PolicyEnvelope:
+    'envelope' '{'
+        envelope_rules+=EnvelopeRule
+    '}'
+;
+EnvelopeRule: type=EnvelopeRuleType 'of' '[' values+=PolicyValue[','] ']';
+EnvelopeRuleType: 'one' | 'set' | 'list';
+
+PolicyValue: Duration | NumberInterval | NUMBER |  STRING | BOOL | ID;
+NumberInterval: from=NUMBER '..' to=NUMBER;
+Duration: value=NUMBER unit=DurationUnit;
+DurationUnit: /minutes?/ | /hours?/ | /days?/ | /weeks?/ | /months?/ | /years?/;
