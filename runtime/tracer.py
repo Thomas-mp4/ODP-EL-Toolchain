@@ -66,6 +66,7 @@ class SimulationTracer:
                 "token_id": token.instance_id,
                 "template_name": token.template.name,
                 "owner": token.owner,
+                "token_type": token.template.token_type,
             },
         )
 
@@ -78,6 +79,7 @@ class SimulationTracer:
                 "owner": token.owner,
                 "new_state": token.state.name,
                 "trigger_event": trigger_event,
+                "token_type": token.template.token_type,
             },
         )
 
@@ -118,16 +120,18 @@ class MermaidGenerator:
                 lines.append(f"    Engine-->>-{party_name}: Prohibited")
                 lines.append(f"    Note over Engine,{party_name}: {reason}")
             elif entry.event_type == "TOKEN_CREATE":
+                token_type = details["token_type"].name.title()
                 lines.append(
-                    f'    Note over {details["owner"].name}: Token \'{details["template_name"]}\' CREATED'
+                    f'    Note over {details["owner"].name}: Token ({token_type}) \'{details["template_name"]}\' CREATED'
                 )
             elif entry.event_type == "TOKEN_STATE_CHANGE":
                 new_state = details["new_state"]
+                token_type = details["token_type"].name.title()
                 lines.append(
                     f'    Engine-->>-Engine: Event: {details["trigger_event"]}'
                 )
                 lines.append(
-                    f'    Note over {details["owner"].name}: Token \'{details["template_name"]}\' is now {new_state}'
+                    f'    Note over {details["owner"].name}: Token ({token_type}) \'{details["template_name"]}\' is now {new_state}'
                 )
 
         return "\n".join(lines)
